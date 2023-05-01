@@ -18,15 +18,15 @@ from sklearn.metrics import accuracy_score, cohen_kappa_score, f1_score, classif
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.decomposition import TruncatedSVD
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
 from sklearn.preprocessing import LabelEncoder
 from collections import defaultdict
 from nltk.corpus import wordnet as wn
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
-
+from nltk.corpus import stopwords
+from nltk.tokenize import RegexpTokenizer
+from nltk.stem import WordNetLemmatizer
 #Set seed for consistency
 np.random.seed(500)
 
@@ -34,10 +34,8 @@ np.random.seed(500)
 nltk.download('stopwords')
 nltk.download('punkt')
 nltk.download('wordnet')
+nltk.download('averaged_perceptron_tagger')
 
-from nltk.corpus import stopwords
-from nltk.tokenize import RegexpTokenizer
-from nltk.stem import WordNetLemmatizer
 lemmatizer = WordNetLemmatizer()
 TOKENIZER = RegexpTokenizer(r'\b\w{3,}\b')
 stop_words = list(set(stopwords.words("english")))
@@ -77,6 +75,33 @@ def clean_reddit(input_text):
     #print(text)
     return text
 
+# Define a function to convert NLTK part-of-speech tags to WordNet part-of-speech tags
+def get_wordnet_pos(nltk_tag):
+    if nltk_tag.startswith('J'):
+        return wn.ADJ
+    elif nltk_tag.startswith('V'):
+        return wn.VERB
+    elif nltk_tag.startswith('N'):
+        return wn.NOUN
+    elif nltk_tag.startswith('R'):
+        return wn.ADV
+    else:
+        return wn.NOUN  # Default to noun if part-of-speech cannot be determined
+
+# Define a function to lemmatize a sentence
+def lemmatize_sentence(sentence):
+    # Tokenize the sentence into words
+    words = nltk.word_tokenize(sentence)
+    # Get the part-of-speech tags for each word
+    nltk_tags = nltk.pos_tag(words)
+    # Convert the NLTK part-of-speech tags to WordNet part-of-speech tags
+    wordnet_tags = [(word, get_wordnet_pos(tag)) for word, tag in nltk_tags]
+    # Lemmatize each word using its corresponding part-of-speech tag
+    lemmatized_words = [lemmatizer.lemmatize(word, tag) for word, tag in wordnet_tags]
+    # Join the lemmatized words back into a sentence
+    lemmatized_sentence = ' '.join(lemmatized_words)
+    return lemmatized_sentence
+
 #Load in datasets
 Youtube_df = pd.read_csv('Youtube_transcripts.csv', encoding = 'latin-1') #Dimensions for classification: kind (video category), author
 Reddit_df = pd.read_csv('Reddit_data4.csv', encoding = 'latin-1') #Dimensions for categorization: subreddit
@@ -91,6 +116,12 @@ Youtube_df = Youtube_df[Youtube_df['text'] != "Error: Unable to extract transcri
 #Apply our cleaning functions (see above)
 Reddit_df['clean_text'] = Reddit_df['cleaned'].apply(clean_reddit)
 Youtube_df['clean_text'] = Youtube_df['text'].apply(clean_youtube)
+Youtube_df['lemma_text'] = Youtube_df['clean_text'].apply(lambda x: ' '.join([lemmatize_sentence(sentence) for sentence in nltk.sent_tokenize(x)]))
+Reddit_df['lemma_text'] = Reddit_df['clean_text'].apply(lambda x: ' '.join([lemmatize_sentence(sentence) for sentence in nltk.sent_tokenize(x)]))
+#Reddit_df.dropna(subset=['clean_text'], inplace=True)
+#Youtube_df.dropna(subset=['clean_text'], inplace=True)
+#Reddit_df.rename(columns={'lemma_text': 'clean_text'}, inplace=True)
+#Youtube_df.rename(columns={'lemma_text': 'clean_text'}, inplace=True)
 
 #create a separate dataset with just text and modality in case we have time to do this
 Youtube_df['modality'] = 'spoken'
@@ -347,7 +378,7 @@ LSA_Youtube_Out = lsa_Youtube.fit(Modality_text_train_LSA)
 LSA_Modality_Out = lsa_Modality.fit(Modality_text_train_LSA)
 
 # Print the topics with their terms
-print("REDDIT \n\n")
+print("\n\nREDDIT \n\n")
 termsR = tfidfconverterR.get_feature_names_out()
 
 for index, component in enumerate(lsa_Reddit.components_):
@@ -357,7 +388,7 @@ for index, component in enumerate(lsa_Reddit.components_):
     print("Topic "+str(index)+": ",top_terms_list)
 
 # Print the topics with their terms
-print("YOUTUBE \n\n")
+print("\n\nYOUTUBE \n\n")
 termsY = tfidfconverterY.get_feature_names_out()
 
 for index, component in enumerate(lsa_Youtube.components_):
@@ -367,7 +398,7 @@ for index, component in enumerate(lsa_Youtube.components_):
     print("Topic "+str(index)+": ",top_terms_list)
 
 # Print the topics with their terms
-print("MODALITY \n\n")
+print("\n\nMODALITY \n\n")
 termsM = tfidfconverterM.get_feature_names_out()
 
 for index, component in enumerate(lsa_Modality.components_):
@@ -380,56 +411,80 @@ for index, component in enumerate(lsa_Modality.components_):
 ### START OF LDA ###
 ### CAN USE GRID SEARCH FOR HYPERPARAMETER TUNING ###
 
-#Split training and test data so it's fresh here
-R_text_train, R_text_test, R_subreddit_train, R_subreddit_test = train_test_split(Video_Category_df['clean_text'],Video_Category_df['kind'], test_size=0.20)
-Y_text_train, Y_text_test, Y_kind_train, Y_kind_test = train_test_split(Subreddit_Category_df['clean_text'],Subreddit_Category_df['subreddit'], test_size=0.20)
-M_text_train, M_text_test, M_modality_train, M_modality_test = train_test_split(Modality_df['clean_text'],Modality_df['modality'], test_size=0.20)
-
 # Define the pipeline
-pipeline = Pipeline([
-    ('vectorizer', CountVectorizer(min_df = 5, max_df =0.7, max_features=2000,ngram_range=(1, 3), stop_words="english", strip_accents='unicode')),
+pipelineY = Pipeline([
+    ('vectorizer', CountVectorizer(min_df = 0.05, max_df =0.7, max_features=2000,ngram_range=(1, 3), stop_words="english", strip_accents='unicode')),
     ('lda', LatentDirichletAllocation(learning_method='online'))])
 
 # Define the hyperparameter grid to search over
-params = {'lda__n_components': [4,6,8,10,11,12]}
+paramsY = {'lda__n_components': [2,4,6,8,10,11,12,14]}
 
 # Perform grid search to find the best hyperparameters
-grid_search = GridSearchCV(pipeline, params, cv=5, verbose=1)
-grid_search.fit(Y_text_train, Y_kind_train)
+grid_searchY = GridSearchCV(pipelineY, paramsY, cv=5, verbose=1)
+grid_searchY.fit(Video_Category_df['clean_text'], Video_Category_df['kind'])
 
 # Print the best hyperparameters
-print("Best hyperparameters for Youtube: ", grid_search.best_params_)
+print("Best hyperparameters for Youtube: ", grid_searchY.best_params_)
 
 # Fit the pipeline to the data using the best hyperparameters
-pipeline.set_params(**grid_search.best_params_)
-pipeline.fit(Y_text_train, Y_kind_train)
+pipelineY.set_params(**grid_searchY.best_params_)
+pipelineY.fit(Video_Category_df['clean_text'], Video_Category_df['kind'])
 
 # Get the top 10 words for each category
-vectorizer = pipeline.named_steps['vectorizer']
-lda = pipeline.named_steps['lda']
-feature_names = vectorizer.get_feature_names_out()
-for topic_idx, topic in enumerate(lda.components_):
+vectorizerY = pipelineY.named_steps['vectorizer']
+ldaY = pipelineY.named_steps['lda']
+feature_namesY = vectorizerY.get_feature_names_out()
+for topic_idx, topic in enumerate(ldaY.components_):
     print("Category %d:" % (topic_idx))
-    print(" ".join([feature_names[i] for i in topic.argsort()[:-11:-1]]))
+    print(", ".join([feature_namesY[i] for i in topic.argsort()[:-11:-1]]))
 
-# Define the pipeline
-pipelineM = Pipeline([
-    ('vectorizer', CountVectorizer(min_df = 5, max_df =0.7, max_features=2000,ngram_range=(1, 3), stop_words="english", strip_accents='unicode')),
+
+# Now for Reddit
+
+PipelineR = Pipeline([
+    ('vectorizer', CountVectorizer(min_df = 0.05, max_df =0.7, max_features=2000,ngram_range=(1, 3), stop_words="english", strip_accents='unicode')),
     ('lda', LatentDirichletAllocation(learning_method='online'))])
 
 # Define the hyperparameter grid to search over
-paramsM = {'lda__n_components': [10,11,12]}
+paramsR = {'lda__n_components': [3,6,9,12,15,18,21,24,27,30]}
+
+# Perform grid search to find the best hyperparameters
+grid_searchR = GridSearchCV(PipelineR, paramsR, cv=5, verbose=1)
+grid_searchR.fit(Subreddit_Category_df['clean_text'], Subreddit_Category_df['subreddit'])
+
+# Print the best hyperparameters
+print("Best hyperparameters for Reddit: ", grid_searchR.best_params_)
+
+# Fit the pipeline to the data using the best hyperparameters
+PipelineR.set_params(**grid_searchR.best_params_)
+PipelineR.fit(Subreddit_Category_df['clean_text'], Subreddit_Category_df['subreddit'])
+
+# Get the top 10 words for each category
+vectorizerR = RipelineR.named_steps['vectorizer']
+ldaR = RipelineR.named_steps['lda']
+feature_namesR = vectorizerR.get_feature_names_out()
+for topic_idx, topic in enumerate(ldaR.components_):
+    print("Category %d:" % (topic_idx))
+    print(", ".join([feature_namesR[i] for i in topic.argsort()[:-11:-1]]))
+
+# Define the pipeline for Modality
+pipelineM = Pipeline([
+    ('vectorizer', CountVectorizer(min_df = 0.05, max_df =0.7, max_features=2000,ngram_range=(1, 3), stop_words="english", strip_accents='unicode')),
+    ('lda', LatentDirichletAllocation(learning_method='online'))])
+
+# Define the hyperparameter grid to search over
+paramsM = {'lda__n_components': [1,2,3,4]}
 
 # Perform grid search to find the best hyperparameters
 grid_searchM = GridSearchCV(pipelineM, paramsM, cv=5, verbose=1)
-grid_searchM.fit(M_text_train, M_modality_train)
+grid_searchM.fit(Modality_df['clean_text'],Modality_df['modality'])
 
 # Print the best hyperparameters
 print("Best hyperparameters for Modality: ", grid_searchM.best_params_)
 
 # Fit the pipeline to the data using the best hyperparameters
 pipelineM.set_params(**grid_searchM.best_params_)
-pipelineM.fit(M_text_train, M_modality_train)
+pipelineM.fit(Modality_df['clean_text'],Modality_df['modality'])
 
 # Get the top 10 words for each category
 vectorizerM = pipelineM.named_steps['vectorizer']
@@ -439,19 +494,73 @@ for topic_idx, topic in enumerate(ldaM.components_):
     print("Category %d:" % (topic_idx))
     print(" ".join([feature_namesM[i] for i in topic.argsort()[:-11:-1]]))
 
-predicted_Modality = pipeline.predict(M_text_test)
+# dictionary to store words for each topic and number of words per topic to retrive
+#https://stackoverflow.com/questions/60790721/topic-modeling-run-lda-in-sklearn-how-to-compute-the-wordcloud
+wordsM = {}
+n_top_wordsM = 10
 
-# Compute the confusion matrix
-LDAcmM = confusion_matrix(M_modality_test, predicted_genres)
+for topic, component in enumerate(ldaM.components_):
 
-# Plot the confusion matrix as a heatmap
-fig, ax = plt.subplots(figsize=(10, 8))
-sns.heatmap(LDAcmM, annot=True, cmap='Blues', fmt='g',
-            xticklabels=categories, yticklabels=categories)
-ax.set_xlabel('Predicted Genre', fontsize=12)
-ax.set_ylabel('True Genre', fontsize=12)
-plt.gcf().set_size_inches(48, 36) # Adjust the width and height to your needs
-plt.savefig('ModalityLDA.pdf')
+    # need [::-1] to sort the array in descending order
+    indices = np.argsort(component)[::-1][:n_top_wordsM]
+
+    # store the words most relevant to the topic
+    wordsM[topic] = [feature_namesM[i] for i in indices]
+print(wordsM)
+
+# Perform grid search to find the best hyperparameters
+#grid_search = GridSearchCV(pipeline, params, cv=5, n_jobs=-1)
+#grid_search.fit(df['text'])
+
+# Get the best LDA model#
+#lda_model = grid_search.best_estimator_.named_steps['lda']
+
+# Get the topic distribution for each document
+#doc_topic_dist = lda_model.transform(grid_search.best_estimator_.named_steps['tfidf'].transform(df['text']))
+
+# Get the most common words for each topic
+tfidf_modelM = grid_searchM.best_estimator_.named_steps['tfidf']
+feature_namesM = tfidf_modelM.get_feature_names_out()
+top_words = []
+for i in range(ldaM.n_components):
+    sorted_topicsM = ldaM.components_[i].argsort()[::-1]
+    top_words.append([feature_namesM[word] for word in sorted_topicsM[:10]])
+
+# Create a word cloud for each topic
+for i in range(ldaM.n_components):
+    plt.figure(figsize=(10, 6))
+    wcM = WordCloud(background_color='white', width=800, height=400).generate(' '.join(top_words[i]))
+    plt.imshow(wcM, interpolation='bilinear')
+    plt.axis('off')
+    plt.title('Topic {}'.format(i+1))
+    plt.savefig('wordcloud_topic_{}.png'.format(i+1))
+    plt.clf()
+#from
+def get_model_topics(model, vectorizer, topics, n_top_words):
+    word_dict = {}
+    feature_names = vectorizer.get_feature_names_out()
+    for topic_idx, topic in enumerate(model.components_):
+        top_features_ind = topic.argsort()[:-n_top_words - 1:-1]
+        top_features = [feature_names[i] for i in top_features_ind]
+        word_dict[topics[topic_idx]] = top_features
+    print(pd.DataFrame(word_dict))
+    return pd.DataFrame(word_dict)
+
+get_model_topics(ldaM, vectorizerM, feature_namesM,10)
+
+# If you run it with just 2 components
+pipelineM = Pipeline([
+    ('vectorizer', CountVectorizer(min_df = 0.05, max_df =0.7, max_features=2000,ngram_range=(1, 3), stop_words="english", strip_accents='unicode')),
+    ('lda', LatentDirichletAllocation(learning_method='online', n_components =2))])
+pipelineM.fit(Modality_df['clean_text'])
+
+# Get the top 10 words for each category
+vectorizerM = pipelineM.named_steps['vectorizer']
+ldaM = pipelineM.named_steps['lda']
+feature_namesM = vectorizerM.get_feature_names_out()
+for topic_idx, topic in enumerate(ldaM.components_):
+    print("Category %d:" % (topic_idx))
+    print(" ".join([feature_namesM[i] for i in topic.argsort()[:-11:-1]]))
 
 import matplotlib.pyplot as plt
 for t in range(ldaM.num_topics):
@@ -460,3 +569,4 @@ for t in range(ldaM.num_topics):
     plt.axis("off")
     plt.title("Topic #" + str(t))
     plt.savefig('Topic'+str(t)+'ModalityLDA.pdf')
+plt.clf()
