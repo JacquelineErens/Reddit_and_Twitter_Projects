@@ -1,4 +1,3 @@
-#Import packages
 import pandas as pd
 import sys
 import re
@@ -8,10 +7,17 @@ import nltk
 import matplotlib.pyplot as plt
 from nltk import word_tokenize
 from nltk.stem.porter import PorterStemmer
-from wordcloud import WordCloud
 import seaborn as sns
 import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import TfidfVectorizer,CountVectorizer
+from sklearn.linear_model import Perceptron
+from sklearn.pipeline import Pipeline
+from sklearn.datasets import load_files, fetch_20newsgroups
 from sklearn.model_selection import train_test_split, StratifiedKFold,cross_val_score,KFold
 from sklearn import model_selection, naive_bayes, svm, metrics
 from sklearn.metrics import accuracy_score, cohen_kappa_score, f1_score, classification_report, confusion_matrix
@@ -26,6 +32,7 @@ from nltk.corpus import wordnet as wn
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
+from wordcloud import WordCloud
 
 #Set seed for consistency
 np.random.seed(500)
@@ -125,31 +132,48 @@ M_text_train, M_text_test, M_modality_train, M_modality_test = train_test_split(
 
 # create a pipeline for text preprocessing and clustering
 pipeline = Pipeline([
-    ('tfidf', TfidfVectorizer(stop_words='english', max_features=2000)),
-    ('kmeans', KMeans(random_state=42))
-])
+    ('tfidf', TfidfVectorizer(stop_words='english', max_features=2000, min_df = 0.05)),
+    ('kmeans', KMeans(random_state=42))])
 
 # set hyperparameters to be tuned
 parameters = {
-    'tfidf__max_df': (0.5, 0.6),
-    'tfidf__min_df': (.05),
-    'kmeans__n_clusters': (3, 5, 7,9,11,13)
-}
+    'tfidf__max_df': [0.5, 0.6,0.7],
+    'kmeans__n_clusters': [3, 5, 7,9,11,13]}
 
 # perform hyperparameter tuning using GridSearchCV
 grid_search = GridSearchCV(pipeline, parameters, cv=5)
 grid_search.fit(Video_Category_df['clean_text'])
 
 # Print the best hyperparameters and the corresponding mean cross-validated score
+print("YOUTUBE")
 print("Best parameters: ", grid_search.best_params_)
 print("Best score: ", grid_search.best_score_)
 
 # extract the best model from the grid search
 best_model = grid_search.best_estimator_
 
+kmeans_model = grid_search.best_estimator_.named_steps['kmeans']
+labels = kmeans_model.labels_
+
 # fit the best model to the data
 best_model.fit(Video_Category_df['clean_text'])
 
+tfidf_model = grid_search.best_estimator_.named_steps['tfidf']
+feature_names = tfidf_model.get_feature_names_out()
+top_words = []
+for i in range(kmeans_model.n_clusters):
+	cluster= Video_Category_df[labels == i]['clean_text']
+	tfidf = tfidf_model.transform(cluster)
+	sorted_tfidf=tfidf.sum(axis=0).getA1().argsort()[::-1]
+	top_words.append([feature_names[word] for word in sorted_tfidf[:10]])
+print(top_words)
+for i in range(kmeans_model.n_clusters):
+	plt.figure(figsize = (10,10))
+	wc = WordCloud(background_color="white",width = 800, height = 800).generate(" ".join(top_words[i]))
+	plt.imshow(wc, interpolation ='bilinear')
+	plt.axis('off')
+	plt.title('Cluster {}'.format(i+1))
+	plt.savefig('Youtube_wordcloud_cluster{}.png'.format(i+1))
 
 # Plot the elbow curve
 inertias = []
@@ -162,13 +186,122 @@ for k in range(2, 13):
 plt.plot(range(2, 13), inertias, marker='o')
 plt.xlabel('Number of clusters')
 plt.ylabel('Inertia')
-plt.savefig("Inertia For K Means")
-
+plt.savefig("Inertia For K Means Youtube.pdf")
+plt.clf()
 # create wordclouds for each cluster
-for i, cluster_center in enumerate(best_model.named_steps['kmeans'].cluster_centers_):
-    wordcloud = WordCloud(background_color='white', width=800, height=800).generate_from_frequencies(zip(best_model.named_steps['tfidf'].get_feature_names_out(), cluster_center))
-    plt.figure(figsize=(22, 22), facecolor=None)
-    plt.imshow(wordcloud)
-    plt.axis("off")
-    plt.tight_layout(pad=0)
-    plt.savefig(f'cluster{i}_kmeans_wordcloud.df')
+print(best_model.named_steps['tfidf'].get_feature_names_out())
+
+### NOW DO REDDIT ###
+# create a pipeline for text preprocessing and clustering
+pipelineR = Pipeline([
+    ('tfidf', TfidfVectorizer(stop_words='english', max_features=2000, min_df = 0.05)),
+    ('kmeans', KMeans(random_state=42))])
+
+# set hyperparameters to be tuned
+parametersR = {
+    'tfidf__max_df': [0.5, 0.6,0.7,0.8],
+    'kmeans__n_clusters': [3, 5, 7,9,11,13,15,17,19,23,25,27]}
+
+# perform hyperparameter tuning using GridSearchCV
+grid_searchR = GridSearchCV(pipelineR, parametersR, cv=5)
+grid_searchR.fit(Subreddit_Category_df['clean_text'])
+
+# extract the best model from the grid search
+best_modelR = grid_searchR.best_estimator_
+kmeans_modelR = grid_search.best_estimator_.named_steps['kmeans']
+labelsR = kmeans_model.labels_
+# fit the best model to the data
+best_modelR.fit(Subreddit_Category_df['clean_text'])
+print("Reddit")
+print("Best hyperparameters: ", grid_searchR.best_params_)
+
+tfidf_modelR = grid_searchR.best_estimator_.named_steps['tfidf']
+feature_namesR = tfidf_modelR.get_feature_names_out()
+top_wordsR = []
+for i in range(kmeans_modelR.n_clusters):
+	clusterR= Video_Category_df[labelsR == i]['clean_text']
+	tfidfR = tfidf_modelR.transform(clusterR)
+	sorted_tfidfR=tfidfR.sum(axis=0).getA1().argsort()[::-1]
+	top_wordsR.append([feature_namesR[word] for word in sorted_tfidfR[:10]])
+print(top_wordsR)
+for i in range(kmeans_modelR.n_clusters):
+	plt.figure(figsize = (39,39))
+	wcR = WordCloud(background_color="white",width = 800, height = 800).generate(" ".join(top_wordsR[i]))
+	plt.imshow(wcR, interpolation ='bilinear')
+	plt.axis('off')
+	plt.title('Cluster {}'.format(i+1))
+	plt.savefig('Reddit_wordcloud_cluster{}.png'.format(i+1))
+# Plot the elbow curve
+inertiasR = []
+for k in range(2, 30):
+    kmeansR = KMeans(n_clusters=k, random_state=42)
+    pipelineR.set_params(kmeans=kmeansR)
+    pipelineR.fit(Subreddit_Category_df['clean_text'])
+    inertiasR.append(pipelineR['kmeans'].inertia_)
+
+plt.plot(range(2, 30), inertiasR, marker='o')
+plt.xlabel('Number of clusters')
+plt.ylabel('Inertia')
+plt.savefig("Inertia For K Means Reddit.pdf")
+plt.clf()
+print(best_modelR.named_steps['tfidf'].get_feature_names_out())
+
+
+### And Modality ###
+pipelineM = Pipeline([
+    ('tfidf', TfidfVectorizer(stop_words='english', max_features=2000, min_df = 0.05)),
+    ('kmeans', KMeans(random_state=42))
+])
+
+# set hyperparameters to be tuned
+parametersM = {
+    'tfidf__max_df': [0.5, 0.6, 0.7,.8,.9],
+    'kmeans__n_clusters': [1,2,3]
+}
+
+# perform hyperparameter tuning using GridSearchCV
+grid_searchM = GridSearchCV(pipelineM, parametersM, cv=5)
+grid_searchM.fit(Modality_df['clean_text'])
+
+# extract the best model from the grid search
+best_modelM = grid_searchM.best_estimator_
+kmeans_modelM = grid_search.best_estimator_.named_steps['kmeans']
+labelsM = kmeans_model.labels_
+
+# fit the best model to the data
+best_modelM.fit(Modality_df['clean_text'])
+print("MODALITY")
+print("Best hyperparameters: ", grid_searchM.best_params_)
+
+
+tfidf_modelM = grid_searchM.best_estimator_.named_steps['tfidf']
+feature_namesM = tfidf_modelM.get_feature_names_out()
+top_wordsM = []
+for i in range(kmeans_modelM.n_clusters):
+	clusterM= Modality_df[labels == i]['clean_text']
+	tfidfM = tfidf_modelM.transform(clusterM)
+	sorted_tfidfM=tfidfM.sum(axis=0).getA1().argsort()[::-1]
+	top_wordsM.append([feature_namesM[word] for word in sorted_tfidfM[:10]])
+print(top_wordsM)
+for i in range(kmeans_modelM.n_clusters):
+	plt.figure(figsize = (30,30))
+	wcM = WordCloud(background_color="white",width = 800, height = 800).generate(" ".join(top_wordsM[i]))
+	plt.imshow(wcM, interpolation ='bilinear')
+	plt.axis('off')
+	plt.title('Cluster {}'.format(i+1))
+	plt.savefig('Modality_wordcloud_cluster{}.png'.format(i+1))
+
+# Plot the elbow curve
+inertias = []
+for k in range(2, 5):
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    pipelineM.set_params(kmeans=kmeans)
+    pipelineM.fit(Modality_df['clean_text'])
+    inertias.append(pipelineM['kmeans'].inertia_)
+plt.figure(figsize = (20,20))
+plt.plot(range(2, 5), inertias, marker='o')
+plt.xlabel('Number of clusters')
+plt.ylabel('Inertia')
+plt.savefig("Inertia For K Means Modality.pdf")
+plt.clf()
+print(best_model.named_stepsM['tfidf'].get_feature_names_out())
