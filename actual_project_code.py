@@ -11,6 +11,7 @@ from nltk.stem.porter import PorterStemmer
 from wordcloud import WordCloud
 import seaborn as sns
 import numpy as np
+import os
 from sklearn.feature_extraction.text import TfidfVectorizer,CountVectorizer
 from sklearn.model_selection import train_test_split, StratifiedKFold,cross_val_score,KFold
 from sklearn import model_selection, naive_bayes, svm, metrics
@@ -42,6 +43,12 @@ stop_words = list(set(stopwords.words("english")))
 stop_words += list(string.punctuation)
 stop_words += ['__', '___']
 
+def change_or_make_path(path_addition):
+    if os.path.exists(os.getcwd()+"/"+path_addition):
+        os.chdir(os.getcwd()+"/"+path_addition)
+    else:
+        os.mkdir(path_addition)
+        os.chdir(os.getcwd()+"/"+path_addition)
 
 #cleaning functions for processing text
 def clean_youtube(input_text):
@@ -460,8 +467,8 @@ PipelineR.set_params(**grid_searchR.best_params_)
 PipelineR.fit(Subreddit_Category_df['clean_text'], Subreddit_Category_df['subreddit'])
 
 # Get the top 10 words for each category
-vectorizerR = RipelineR.named_steps['vectorizer']
-ldaR = RipelineR.named_steps['lda']
+vectorizerR = PipelineR.named_steps['vectorizer']
+ldaR = PipelineR.named_steps['lda']
 feature_namesR = vectorizerR.get_feature_names_out()
 for topic_idx, topic in enumerate(ldaR.components_):
     print("Category %d:" % (topic_idx))
@@ -519,22 +526,16 @@ print(wordsM)
 #doc_topic_dist = lda_model.transform(grid_search.best_estimator_.named_steps['tfidf'].transform(df['text']))
 
 # Get the most common words for each topic
-tfidf_modelM = grid_searchM.best_estimator_.named_steps['tfidf']
-feature_namesM = tfidf_modelM.get_feature_names_out()
-top_words = []
-for i in range(ldaM.n_components):
-    sorted_topicsM = ldaM.components_[i].argsort()[::-1]
-    top_words.append([feature_namesM[word] for word in sorted_topicsM[:10]])
+best_modelM = grid_searchM.best_estimator_.named_steps['lda']
+feature_namesM = best_modelM.get_feature_names_out()
+print(feature_namesM)
 
-# Create a word cloud for each topic
-for i in range(ldaM.n_components):
-    plt.figure(figsize=(10, 6))
-    wcM = WordCloud(background_color='white', width=800, height=400).generate(' '.join(top_words[i]))
-    plt.imshow(wcM, interpolation='bilinear')
-    plt.axis('off')
-    plt.title('Topic {}'.format(i+1))
-    plt.savefig('wordcloud_topic_{}.png'.format(i+1))
-    plt.clf()
+# If you run it with just 2 components
+pipelineM2 = Pipeline([
+    ('vectorizer', CountVectorizer(min_df = 0.05, max_df =0.7, max_features=2000,ngram_range=(1, 3), stop_words="english", strip_accents='unicode')),
+    ('lda', LatentDirichletAllocation(learning_method='online', n_components =2))])
+pipelineM2.fit(Modality_df['clean_text'])
+
 #from
 def get_model_topics(model, vectorizer, topics, n_top_words):
     word_dict = {}
@@ -548,25 +549,54 @@ def get_model_topics(model, vectorizer, topics, n_top_words):
 
 get_model_topics(ldaM, vectorizerM, feature_namesM,10)
 
-# If you run it with just 2 components
-pipelineM = Pipeline([
-    ('vectorizer', CountVectorizer(min_df = 0.05, max_df =0.7, max_features=2000,ngram_range=(1, 3), stop_words="english", strip_accents='unicode')),
-    ('lda', LatentDirichletAllocation(learning_method='online', n_components =2))])
-pipelineM.fit(Modality_df['clean_text'])
-
+change_or_make_path("LDA_wordclouds_Modality")
 # Get the top 10 words for each category
-vectorizerM = pipelineM.named_steps['vectorizer']
-ldaM = pipelineM.named_steps['lda']
-feature_namesM = vectorizerM.get_feature_names_out()
-for topic_idx, topic in enumerate(ldaM.components_):
+vectorizerM2 = pipelineM2.named_steps['vectorizer']
+ldaM2 = pipelineM2.named_steps['lda']
+feature_namesM2 = vectorizerM2.get_feature_names_out()
+for topic_idx, topic in enumerate(ldaM2.components_):
     print("Category %d:" % (topic_idx))
-    print(" ".join([feature_namesM[i] for i in topic.argsort()[:-11:-1]]))
-
-import matplotlib.pyplot as plt
-for t in range(ldaM.num_topics):
-    plt.figure()
-    plt.imshow(WordCloud().fit_words(ldaM.show_topic(t, 200)))
+    print(" ".join([feature_namesM2[i] for i in topic.argsort()[:-11:-1]]))
+    wordcloud = WordCloud(width=800, height=800).generate_from_frequencies(dict(zip(feature_namesM2, topic)))
+    #plt.figure(figsize=(12, 10))
+    plt.imshow(wordcloud, interpolation='bilinear')
     plt.axis("off")
-    plt.title("Topic #" + str(t))
-    plt.savefig('Topic'+str(t)+'ModalityLDA.pdf')
-plt.clf()
+    plt.title(f"Topic {topic_idx+1}.pdf", fontsize=20)
+    plt.savefig(f"Topic {topic_idx +1}.pdf", fontsize =20)
+    plt.clf()
+os.chdir("..")
+
+change_or_make_path("LDA_wordclouds_Reddit")
+# Get the top 10 words for each category
+vectorizerR = RipelineR.named_steps['vectorizer']
+ldaR = PipelineR.named_steps['lda']
+feature_namesR = vectorizerR.get_feature_names_out()
+for topic_idx, topic in enumerate(ldaR.components_):
+    print("Category %d:" % (topic_idx))
+    print(" ".join([feature_namesR[i] for i in topic.argsort()[:-11:-1]]))
+    wordcloudR = WordCloud(width=800, height=800).generate_from_frequencies(dict(zip(feature_namesR, topic)))
+    #plt.figure(figsize=(12, 10))
+    plt.imshow(wordcloudR, interpolation='bilinear')
+    plt.axis("off")
+    plt.title(f"Topic {topic_idx+1}.pdf", fontsize=20)
+    plt.savefig(f"Topic {topic_idx +1}.pdf", fontsize =20)
+    plt.clf()
+os.chdir("..")
+
+change_or_make_path("LDA_wordclouds_Youtube")
+# Get the top 10 words for each category
+vectorizerY = pipelineY.named_steps['vectorizer']
+ldaY = pipelineY.named_steps['lda']
+feature_namesY = vectorizerY.get_feature_names_out()
+for topic_idx, topic in enumerate(ldaY.components_):
+    print("Category %d:" % (topic_idx))
+    print(" ".join([feature_namesY[i] for i in topic.argsort()[:-11:-1]]))
+    wordcloudY = WordCloud(width=800, height=800).generate_from_frequencies(dict(zip(feature_namesY, topic)))
+    #plt.figure(figsize=(12, 10))
+    plt.imshow(wordcloudY, interpolation='bilinear')
+    plt.axis("off")
+    plt.title(f"Topic {topic_idx+1}.pdf", fontsize=20)
+    plt.savefig(f"Topic {topic_idx +1}.pdf", fontsize =20)
+    plt.clf()
+os.chdir("..")
+print("Process Finished!!")
