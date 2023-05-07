@@ -8,7 +8,7 @@ import my_credentials
 #reddit = praw.Reddit(client_id='your_client_id',
 #                     client_secret='your_client_secret',
 #                     user_agent='your_user_agent')
-reddit = praw.Reddit(client_id=my_credentials.CLIENT_ID, client_secret=my_credentials.CLIENT_SECRET, user_agent="PSYC593_script:v1 (by /u/Champaign__Supernova)", password=my_credentials.PASSWORD, username=my_credentials.USERNAME)
+reddit = praw.Reddit(client_id=my_credentials.CLIENT_ID, client_secret=my_credentials.CLIENT_SECRET, user_agent="PSYC593_script:v1", password=my_credentials.PASSWORD, username=my_credentials.USERNAME)
 # Define the subreddits you want to scrape
 DEFAULT1 = ["explainlikeimfive","offmychest","Showerthoughts","mildlyinteresting","mildlyinfuriating","LifeProTips","UIUC","OldSchoolCool","DIY","movies","worldnews","politics"]
 DEFAULT5 = ["TwoXChromosomes","changemyview","unpopularopinion","OutOfTheLoop","YouShouldKnow","IAmA","memes","NoStupidQuestions","relationship_advice","gaming","food","science","amitheasshole"]
