@@ -12,7 +12,7 @@ reddit = praw.Reddit(client_id=my_credentials.CLIENT_ID, client_secret=my_creden
 # Define the subreddits you want to scrape
 DEFAULT1 = ["explainlikeimfive","offmychest","Showerthoughts","mildlyinteresting","mildlyinfuriating","LifeProTips","UIUC","OldSchoolCool","DIY","movies","worldnews","politics"]
 DEFAULT5 = ["TwoXChromosomes","changemyview","unpopularopinion","OutOfTheLoop","YouShouldKnow","IAmA","memes","NoStupidQuestions","relationship_advice","gaming","food","science","amitheasshole"]
-DEFAULT4 = ["interestingasfuck","whitepeopletwitter","blackpeopletwitter","dankmemes","wholesomememes","idiotsincars"]
+DEFAULT4 = ["interestingasfuck","dankmemes","wholesomememes","idiotsincars"]
 DEFAULT2 = ["askscience","Art","books","nottheonion","sports","SkincareAddiction","UIUC"]
 DEFAULT3 = ["Music","pics","videos","MaliciousCompliance","todayilearned","aww","Funny","AdviceAnimals"]
 subreddits = DEFAULT1+DEFAULT5#+DEFAULT4+DEFAULT2+DEFAULT3
